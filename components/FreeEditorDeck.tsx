@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Wand2, Loader2, ImageIcon, Maximize2, Download, X, Camera } from 'lucide-react';
-import { ImageResolution, AspectRatio, CameraShotType, SHOT_CATEGORIES } from '../types';
+import { Wand2, Loader2, ImageIcon, Maximize2, Download, X, Camera, Plus } from 'lucide-react';
+import { ImageResolution, AspectRatio, CameraShotType, SHOT_CATEGORIES, ProjectState } from '../types';
 import { generateImageFromReference } from '../services/geminiService';
 import { base64ToBlob, resolveSrc } from '../services/imageUtils';
 import { saveUserImage, getProjectFolderName } from '../services/fileSystemService';
@@ -9,9 +9,10 @@ import { ImageUploader } from './ImageUploader';
 interface FreeEditorDeckProps {
     onImageGenerated: (image: string) => void;
     userGallery: string[];
+    projectState?: ProjectState | null;
 }
 
-export const FreeEditorDeck: React.FC<FreeEditorDeckProps> = ({ onImageGenerated, userGallery }) => {
+export const FreeEditorDeck: React.FC<FreeEditorDeckProps> = ({ onImageGenerated, userGallery, projectState }) => {
     const [resultImage, setResultImage] = useState<string | null>(null);
     const [prompt, setPrompt] = useState('');
     
@@ -70,19 +71,34 @@ export const FreeEditorDeck: React.FC<FreeEditorDeckProps> = ({ onImageGenerated
         }
     };
 
+    const addReference = (img: string) => {
+        if (refImages.includes(img)) return;
+        setRefImages(prev => [...prev, img].slice(0, 14));
+    };
+
+    const renderAsset = (img: string, i: number) => (
+        <div key={i} className="group relative rounded overflow-hidden border border-slate-800 hover:border-amber-500 transition-all cursor-pointer" onClick={() => addReference(img)}>
+            <img src={resolveSrc(img)} className="w-full h-auto" />
+            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                <Plus className="w-5 h-5 text-white" />
+            </div>
+        </div>
+    );
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full relative">
-            {/* Fullscreen Preview Modal */}
             {fullscreenImage && (
                 <div className="fixed inset-0 z-[60] bg-black/95 flex items-center justify-center p-4" onClick={() => setFullscreenImage(null)}>
-                    <button className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
+                    <button 
+                        className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
+                        onClick={() => setFullscreenImage(null)}
+                    >
                         <X className="w-8 h-8" />
                     </button>
                     <img src={resolveSrc(fullscreenImage)} className="max-w-full max-h-full object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
                 </div>
             )}
 
-            {/* Input Column */}
             <div className="lg:col-span-3 space-y-6 overflow-y-auto custom-scrollbar pr-2">
                  <div className="space-y-2">
                     <label className="text-sm font-semibold text-amber-500 uppercase">Free Text Prompt</label>
@@ -126,7 +142,6 @@ export const FreeEditorDeck: React.FC<FreeEditorDeckProps> = ({ onImageGenerated
                             <option value={AspectRatio.SQUARE}>1:1 Square</option>
                         </select>
                         
-                        {/* New Shot Type Grid */}
                         <div className="relative pt-2 mt-2 border-t border-slate-800">
                             <div className="flex items-center gap-2 mb-2">
                                 <Camera className="w-4 h-4 text-amber-500" />
@@ -189,17 +204,15 @@ export const FreeEditorDeck: React.FC<FreeEditorDeckProps> = ({ onImageGenerated
                     className={`w-full py-4 rounded-lg font-bold text-lg flex items-center justify-center gap-2 transition-all ${
                         isProcessing 
                         ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
-                        : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                        : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/40'
                     }`}
                 >
                     {isProcessing ? <Loader2 className="animate-spin" /> : <Wand2 />}
-                    {isProcessing ? 'GENERATE' : 'GENERATE'}
+                    {isProcessing ? 'GENERATING...' : 'GENERATE'}
                 </button>
             </div>
 
-            {/* Result Area */}
-            <div className="lg:col-span-9 flex flex-col gap-4 h-full overflow-hidden">
-                {/* Main View */}
+            <div className="lg:col-span-6 flex flex-col gap-4 h-full overflow-hidden">
                 <div className="flex-1 bg-black/50 rounded-xl border border-slate-800 relative overflow-hidden group min-h-[400px] flex items-center justify-center">
                     {resultImage ? (
                         <>
@@ -234,9 +247,8 @@ export const FreeEditorDeck: React.FC<FreeEditorDeckProps> = ({ onImageGenerated
                     )}
                 </div>
 
-                {/* User Gallery */}
                 <div className="h-40 bg-slate-900/50 border-t border-slate-800 p-4 overflow-x-auto custom-scrollbar">
-                    <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase">User Generated Gallery</h4>
+                    <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase">Your Generations</h4>
                     <div className="flex gap-2">
                         {userGallery.length === 0 && <span className="text-xs text-slate-600 italic">No images yet.</span>}
                         {userGallery.map((img, i) => (
@@ -245,6 +257,39 @@ export const FreeEditorDeck: React.FC<FreeEditorDeckProps> = ({ onImageGenerated
                             </div>
                         ))}
                     </div>
+                </div>
+            </div>
+
+            <div className="lg:col-span-3 border-l border-slate-800 pl-4 flex flex-col h-full overflow-hidden">
+                <div className="mb-4">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4 text-amber-500" />
+                        SESSION ASSETS
+                    </h3>
+                    <p className="text-[10px] text-slate-500 italic mt-1">Click to add as reference</p>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6">
+                    {projectState && (
+                        <>
+                            {projectState.finalImages.length > 0 && (
+                                <div className="space-y-2">
+                                    <h4 className="text-xs font-bold text-amber-500 uppercase tracking-wider">Director Panels</h4>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {projectState.finalImages.map((img, i) => renderAsset(img, i))}
+                                    </div>
+                                </div>
+                            )}
+                            {projectState.history.map((h, hIdx) => (
+                                <div key={hIdx} className="space-y-2">
+                                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">History #{projectState.history.length - hIdx}</h4>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {h.finalImages.map((img, i) => renderAsset(img, i))}
+                                    </div>
+                                </div>
+                            ))}
+                        </>
+                    )}
+                    {!projectState && <p className="text-slate-500 text-xs italic">No director panels yet.</p>}
                 </div>
             </div>
         </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Loader2, Film, Download, Save, History, FolderOpen, Upload, Cloud, Grid2X2, Grid3X3, CheckCircle, LayoutGrid, Layers, Maximize2, X, Send, MousePointerClick, RefreshCw, HardDrive, FileJson, ChevronDown, Sliders, Palette, FileEdit } from 'lucide-react';
+import { Play, Loader2, Film, Download, Save, History, FolderOpen, Upload, Cloud, Grid2X2, Grid3X3, CheckCircle, LayoutGrid, Layers, Maximize2, X, Send, MousePointerClick, RefreshCw, HardDrive, FileJson, ChevronDown, Sliders, Palette, FileEdit, Plus, Replace } from 'lucide-react';
 import { ImageResolution, AspectRatio, ScriptResponse, ProjectHistoryItem, ProjectState, EditorTransferData, StylePreferences, CameraShotType, SHOT_CATEGORIES } from '../types';
 import { generateScriptAndPrompt, generateBaseGridOptions, remasterQuadrant, extractSpecificShotPrompt, regenerateGridPromptOnly } from '../services/geminiService';
 import { splitImageIntoGrid, resizeImage, base64ToBlob, resolveSrc, blobUrlToBase64 } from '../services/imageUtils';
@@ -41,7 +41,11 @@ export const DirectorDeck: React.FC<DirectorDeckProps> = ({
   const [refImages, setRefImages] = useState<string[]>([]);
   
   // New: Style & Script Editing
-  const [stylePrefs, setStylePrefs] = useState<StylePreferences>({ mode: 'DEFAULT' });
+  const [stylePrefs, setStylePrefs] = useState<StylePreferences>({ 
+      mode: 'DEFAULT',
+      // Default negative prompt as requested
+      customNegative: "no text, no watermark, no grid lines, no grid outlines, no dividing lines, no white borders, no black borders, no frames, no gutters, no blur, no distortion, no bad anatomy"
+  });
   
   const [showStylePanel, setShowStylePanel] = useState(false);
   const [isScriptDirty, setIsScriptDirty] = useState(false);
@@ -124,7 +128,10 @@ export const DirectorDeck: React.FC<DirectorDeckProps> = ({
         setFinalImages(loadedProject.finalImages || []);
         setHistory(loadedProject.history || []);
         
-        setStylePrefs(loadedProject.stylePrefs || { mode: 'DEFAULT' });
+        setStylePrefs(loadedProject.stylePrefs || { 
+            mode: 'DEFAULT', 
+            customNegative: "no text, no watermark, no grid lines, no grid outlines, no dividing lines, no white borders, no black borders, no frames, no gutters, no blur, no distortion, no bad anatomy"
+        });
         
         setIsScriptDirty(loadedProject.isScriptDirty || false);
 
@@ -142,6 +149,24 @@ export const DirectorDeck: React.FC<DirectorDeckProps> = ({
       setScript({ ...script, shots: newShots });
       setIsScriptDirty(true);
   };
+
+  const handleAppendChange = (val: string) => {
+      // Disable override if append is being used
+      if (val && stylePrefs.customOverride) {
+           alert("You cannot use Append and Override at the same time. Please clear one field.");
+           return;
+      }
+      setStylePrefs({ ...stylePrefs, customAppend: val });
+  }
+  
+  const handleOverrideChange = (val: string) => {
+      // Disable append if override is being used
+      if (val && stylePrefs.customAppend) {
+           alert("You cannot use Append and Override at the same time. Please clear one field.");
+           return;
+      }
+      setStylePrefs({ ...stylePrefs, customOverride: val });
+  }
 
   // Phase 1: Script + Candidates (Enhanced for Regenerate logic)
   const handleInitialGenerate = async () => {
@@ -580,18 +605,37 @@ export const DirectorDeck: React.FC<DirectorDeckProps> = ({
                             <option value="CUSTOM">Custom Prompt...</option>
                         </select>
                      </div>
-                     {stylePrefs.mode === 'CUSTOM' && (
-                         <div>
-                            <label className="text-xs text-slate-500 block mb-1">Custom Style Prompt</label>
+
+                     {/* Custom Aesthetic Fields */}
+                     <div className="space-y-3 pt-2">
+                        <div>
+                            <label className="text-xs text-slate-500 flex items-center gap-1 mb-1">
+                                <Plus className="w-3 h-3" /> Custom Aesthetic to Append
+                            </label>
                             <textarea
-                                value={stylePrefs.customPositive || ''}
-                                onChange={(e) => setStylePrefs({ ...stylePrefs, customPositive: e.target.value })}
-                                className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-xs text-white outline-none h-16 resize-none"
-                                placeholder="E.g. Cyberpunk noir, neon lights, rain..."
+                                value={stylePrefs.customAppend || ''}
+                                onChange={(e) => handleAppendChange(e.target.value)}
+                                disabled={!!stylePrefs.customOverride}
+                                className={`w-full bg-slate-800 border ${stylePrefs.customOverride ? 'border-slate-800 opacity-50 cursor-not-allowed' : 'border-slate-700 focus:border-amber-500'} rounded p-2 text-xs text-white outline-none h-12 resize-none transition-all`}
+                                placeholder="E.g. neon lights, volumetric fog..."
                             />
-                         </div>
-                     )}
-                     <div>
+                        </div>
+
+                        <div>
+                            <label className="text-xs text-slate-500 flex items-center gap-1 mb-1">
+                                <Replace className="w-3 h-3" /> Custom Aesthetic to Override
+                            </label>
+                            <textarea
+                                value={stylePrefs.customOverride || ''}
+                                onChange={(e) => handleOverrideChange(e.target.value)}
+                                disabled={!!stylePrefs.customAppend}
+                                className={`w-full bg-slate-800 border ${stylePrefs.customAppend ? 'border-slate-800 opacity-50 cursor-not-allowed' : 'border-slate-700 focus:border-red-500'} rounded p-2 text-xs text-white outline-none h-12 resize-none transition-all`}
+                                placeholder="Overrides preset completely..."
+                            />
+                        </div>
+                     </div>
+
+                     <div className="pt-2 border-t border-slate-800/50">
                         <label className="text-xs text-slate-500 block mb-1">Negative Prompt (Exclude)</label>
                          <input 
                             type="text"

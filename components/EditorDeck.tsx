@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Wand2, Loader2, ImageIcon, Info, Maximize2, Download, X, Eye, EyeOff, Camera } from 'lucide-react';
-import { ImageResolution, AspectRatio, EditorTransferData, CameraShotType, SHOT_CATEGORIES } from '../types';
+import { Wand2, Loader2, ImageIcon, Info, Maximize2, Download, X, Eye, EyeOff, Camera, Plus } from 'lucide-react';
+import { ImageResolution, AspectRatio, EditorTransferData, CameraShotType, SHOT_CATEGORIES, ProjectState } from '../types';
 import { generateImageFromReference } from '../services/geminiService';
 import { resolveSrc } from '../services/imageUtils';
 import { ImageUploader } from './ImageUploader';
 
 interface EditorDeckProps {
     initialData?: EditorTransferData | null;
+    projectState?: ProjectState | null;
+    userGallery?: string[];
 }
 
-export const EditorDeck: React.FC<EditorDeckProps> = ({ initialData }) => {
+export const EditorDeck: React.FC<EditorDeckProps> = ({ initialData, projectState, userGallery = [] }) => {
     const [resultImage, setResultImage] = useState<string | null>(null);
     const [prompt, setPrompt] = useState('');
     
@@ -34,13 +36,10 @@ export const EditorDeck: React.FC<EditorDeckProps> = ({ initialData }) => {
 
     useEffect(() => {
         if (initialData) {
-            // Do NOT set resultImage from initialData, keep it empty for new generation
             setResultImage(null); 
             setUsedPrompt(initialData.prompt);
             setRefImages(initialData.refImages || []);
-            // We don't overwrite the active prompt, user might want to edit it
             setPrompt(""); 
-            // Reset visibility on new import
             setIsPromptVisible(false);
         }
     }, [initialData]);
@@ -59,7 +58,6 @@ export const EditorDeck: React.FC<EditorDeckProps> = ({ initialData }) => {
         setIsProcessing(true);
         setResultImage(null);
         try {
-            // New logic: Text + Refs -> Generation (No source image)
             const result = await generateImageFromReference(
                 prompt, 
                 resolution, 
@@ -76,10 +74,23 @@ export const EditorDeck: React.FC<EditorDeckProps> = ({ initialData }) => {
         }
     };
 
+    const addReference = (img: string) => {
+        if (refImages.includes(img)) return;
+        setRefImages(prev => [...prev, img].slice(0, 14));
+    };
+
+    const renderAsset = (img: string, i: number) => (
+        <div key={i} className="group relative rounded overflow-hidden border border-slate-800 hover:border-amber-500 transition-all cursor-pointer" onClick={() => addReference(img)}>
+            <img src={resolveSrc(img)} className="w-full h-auto" />
+            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                <Plus className="w-5 h-5 text-white" />
+            </div>
+        </div>
+    );
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full relative">
             
-            {/* Fullscreen Preview Modal */}
             {fullscreenImage && (
                 <div className="fixed inset-0 z-[60] bg-black/95 flex items-center justify-center p-4" onClick={() => setFullscreenImage(null)}>
                     <button 
@@ -99,7 +110,6 @@ export const EditorDeck: React.FC<EditorDeckProps> = ({ initialData }) => {
 
             <div className="lg:col-span-3 space-y-6 overflow-y-auto custom-scrollbar pr-2">
                  
-                 {/* Optional Prompt Field */}
                  {usedPrompt && (
                     <div className="space-y-2">
                         <button 
@@ -107,9 +117,9 @@ export const EditorDeck: React.FC<EditorDeckProps> = ({ initialData }) => {
                             className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded flex items-center justify-center gap-2 border border-slate-700 transition-all"
                         >
                             {isPromptVisible ? (
-                                <> <EyeOff className="w-3 h-3" /> HIDE REMASTERED SOURCE PROMPT </>
+                                <> <EyeOff className="w-3 h-3" /> HIDE SOURCE PROMPT </>
                             ) : (
-                                <> <Eye className="w-3 h-3" /> SHOW REMASTERED SOURCE PROMPT </>
+                                <> <Eye className="w-3 h-3" /> SHOW SOURCE PROMPT </>
                             )}
                         </button>
                         
@@ -131,7 +141,7 @@ export const EditorDeck: React.FC<EditorDeckProps> = ({ initialData }) => {
                  <div className="space-y-2">
                     <div className="flex flex-col">
                         <label className="text-sm font-semibold text-amber-500 uppercase">Text Prompt</label>
-                        <span className="text-[10px] text-slate-400">(Refer to image 1 as the image you are editing. E.g. "Change the background of image 1 to a snowy forest")</span>
+                        <span className="text-[10px] text-slate-400">(Refer to image 1 as the image you are editing.)</span>
                     </div>
                     <textarea
                         value={prompt}
@@ -173,7 +183,6 @@ export const EditorDeck: React.FC<EditorDeckProps> = ({ initialData }) => {
                         </select>
                     </div>
 
-                    {/* New Shot Type Grid */}
                     <div className="relative pt-2 mt-2 border-t border-slate-800">
                         <div className="flex items-center gap-2 mb-2">
                              <Camera className="w-4 h-4 text-amber-500" />
@@ -235,20 +244,18 @@ export const EditorDeck: React.FC<EditorDeckProps> = ({ initialData }) => {
                     className={`w-full py-4 rounded-lg font-bold text-lg flex items-center justify-center gap-2 transition-all ${
                         isProcessing 
                         ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
-                        : 'bg-purple-600 hover:bg-purple-500 text-white'
+                        : 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/40'
                     }`}
                 >
                     {isProcessing ? <Loader2 className="animate-spin" /> : <Wand2 />}
-                    {isProcessing ? 'GENERATE' : 'GENERATE'}
+                    {isProcessing ? 'GENERATING...' : 'GENERATE'}
                 </button>
             </div>
 
-            <div className="lg:col-span-9 flex items-center justify-center bg-black/50 rounded-xl border border-slate-800 p-0 relative h-full min-h-[500px] overflow-hidden group">
+            <div className="lg:col-span-6 flex items-center justify-center bg-black/50 rounded-xl border border-slate-800 p-0 relative h-full min-h-[500px] overflow-hidden group">
                 {resultImage ? (
                     <>
                         <img src={resolveSrc(resultImage)} className="max-w-full max-h-full object-contain shadow-2xl" alt="Result" />
-                        
-                        {/* Overlay Controls */}
                         <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                              <button 
                                 onClick={() => setFullscreenImage(resultImage)}
@@ -277,9 +284,51 @@ export const EditorDeck: React.FC<EditorDeckProps> = ({ initialData }) => {
                 {isProcessing && (
                      <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-10 backdrop-blur-sm">
                         <Loader2 className="w-12 h-12 text-purple-500 animate-spin mb-4" />
-                        <p className="text-purple-400 font-mono animate-pulse">Nano Banana Pro Processing...</p>
+                        <p className="text-purple-400 font-mono animate-pulse">Processing...</p>
                     </div>
                 )}
+            </div>
+
+            <div className="lg:col-span-3 border-l border-slate-800 pl-4 flex flex-col h-full overflow-hidden">
+                <div className="mb-4">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4 text-amber-500" />
+                        SESSION ASSETS
+                    </h3>
+                    <p className="text-[10px] text-slate-500 italic mt-1">Click to add as reference</p>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6">
+                    {userGallery.length > 0 && (
+                        <div className="space-y-2">
+                            <h4 className="text-xs font-bold text-emerald-500 uppercase tracking-wider">User Gallery</h4>
+                            <div className="grid grid-cols-2 gap-2">
+                                {userGallery.map((img, i) => renderAsset(img, i))}
+                            </div>
+                        </div>
+                    )}
+
+                    {projectState && (
+                        <>
+                            {projectState.finalImages.length > 0 && (
+                                <div className="space-y-2">
+                                    <h4 className="text-xs font-bold text-amber-500 uppercase tracking-wider">Director Panels</h4>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {projectState.finalImages.map((img, i) => renderAsset(img, i))}
+                                    </div>
+                                </div>
+                            )}
+                            {projectState.history.map((h, hIdx) => (
+                                <div key={hIdx} className="space-y-2">
+                                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">History #{projectState.history.length - hIdx}</h4>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {h.finalImages.map((img, i) => renderAsset(img, i))}
+                                    </div>
+                                </div>
+                            ))}
+                        </>
+                    )}
+                    {(!projectState && userGallery.length === 0) && <p className="text-slate-500 text-xs italic">No assets yet.</p>}
+                </div>
             </div>
         </div>
     );

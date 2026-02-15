@@ -95,7 +95,8 @@ const SHOT_DESCRIPTIONS: Record<CameraShotType, string> = {
   VHS_GLITCH: "VHS aesthetic, tracking lines, chromatic aberration, magnetic tape noise."
 };
 
-const DEFAULT_NEGATIVE_PROMPT = "--no text, no watermark, no text overlay, no borders, seamless grid, merged panels, inconsistent lighting";
+// Updated default negative prompt with explicit "no" prefix and divider exclusions
+const DEFAULT_NEGATIVE_PROMPT = "no text, no watermark, no grid lines, no grid outlines, no dividing lines, no white borders, no black borders, no frames, no gutters, no blur, no distortion, no bad anatomy";
 
 // Mutable store for runtime key updates
 let RUNTIME_API_KEY = process.env.API_KEY || '';
@@ -133,18 +134,33 @@ const resolveAspectRatio = (ratio: string): string => {
 }
 
 const resolveStyleString = (prefs: StylePreferences): string => {
-    if (prefs.mode === 'CUSTOM') {
-        return prefs.customPositive || '';
+    // 1. Check Override First
+    if (prefs.customOverride && prefs.customOverride.trim().length > 0) {
+        return `VISUAL STYLE OVERRIDE: ${prefs.customOverride}`;
     }
-    return STYLE_MODIFIERS[prefs.mode] || STYLE_MODIFIERS.DEFAULT;
+
+    // 2. Determine Base Style
+    let base = '';
+    if (prefs.mode === 'CUSTOM') {
+        base = prefs.customPositive || '';
+    } else {
+        base = STYLE_MODIFIERS[prefs.mode] || STYLE_MODIFIERS.DEFAULT;
+    }
+
+    // 3. Append Custom Aesthetic
+    if (prefs.customAppend && prefs.customAppend.trim().length > 0) {
+        base = `${base}\n\nADDITIONAL STYLE DETAILS: ${prefs.customAppend}`;
+    }
+
+    return base;
 };
 
 const resolveNegativePrompt = (prefs: StylePreferences): string => {
-    let neg = DEFAULT_NEGATIVE_PROMPT;
-    if (prefs.customNegative) {
-        neg += `, ${prefs.customNegative}`;
+    // Use the custom negative prompt if set, otherwise fallback to the default
+    if (prefs.customNegative !== undefined && prefs.customNegative !== null && prefs.customNegative.trim().length > 0) {
+        return prefs.customNegative;
     }
-    return neg;
+    return DEFAULT_NEGATIVE_PROMPT;
 }
 
 export const generateScriptAndPrompt = async (
@@ -350,21 +366,30 @@ export const generateBaseGridOptions = async (
     : '';
 
   const layoutInstruction = gridSize 
-    ? `STRICT LAYOUT: Split the image into a precise ${gridSize} by ${gridSize} grid of panels (contact sheet). CONSISTENCY: Maintain exact character details across all panels.` 
+    ? `LAYOUT MANDATE: Generate a seamless ${gridSize}x${gridSize} contact sheet containing exactly ${gridSize * gridSize} panels.
+The panels must be touching directly. 
+NO DIVIDING LINES, NO GUTTERS, NO WHITE BORDERS, NO BLACK FRAMES.
+The result should look like a single image split perfectly into ${gridSize} rows and ${gridSize} columns.` 
     : '';
 
-  let fullPrompt = `${prompt} 
+  // Restructured prompt to ensure style overrides and layout instructions are prioritized
+  let fullPrompt = `
+  STORY & CONTENT:
+  ${prompt} 
 
+  AESTHETIC & STYLE:
   ${styleModifier}
   
+  LAYOUT & COMPOSITION:
   ${layoutInstruction}
 
   ${shotModifier ? `CAMERA TECHNIQUE OVERRIDE: ${shotModifier}` : ''}
 
+  NEGATIVE PROMPT / EXCLUDED ELEMENTS:
   ${negativePrompt}`;
   
   if (aspectRatio === AspectRatio.CINEMATIC) {
-      fullPrompt += ", cinematic ultrawide 21:9 aspect ratio";
+      fullPrompt += "\nNote: Generate in cinematic ultrawide 21:9 aspect ratio";
   }
 
   const validRatio = resolveAspectRatio(aspectRatio);
@@ -425,17 +450,22 @@ export const remasterQuadrant = async (
   const model = "gemini-3-pro-image-preview"; // Mandatory Pro Model
   
   const styleModifier = resolveStyleString(stylePrefs);
+  const negativePrompt = resolveNegativePrompt(stylePrefs);
 
   let prompt = `Context: ${originalContext}.
 
   Preserve the exact composition, framing, camera angle, color grade and subject placement — do not alter or add new elements.
   Increase resolution to true high-end cinematic clarity, with natural film-grade sharpness (no AI oversharpening).
 
+  STYLE INSTRUCTIONS:
   ${styleModifier}
 
   Keep the same color temperature and color tone.
   Texture pass should feel physically real: skin pores, fabric weave, dust, stone, metal, wood — all enhanced without plastic smoothing.
   Maintain cinematic depth of field consistent with the original image (natural lens falloff, no artificial blur).
+  
+  EXCLUDED:
+  ${negativePrompt}
 
   Do not redraw. Do not stylize. Do not beautify. Only enhance realism and resolution.`;
   

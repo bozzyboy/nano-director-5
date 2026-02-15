@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Clapperboard, Edit, Video, Key, LogIn, User as UserIcon, Image as ImageIcon, Film, FolderInput, HardDrive, LogOut, ChevronDown, CheckCircle, Save, FolderOpen, AlertCircle, Cloud, Laptop, Settings } from 'lucide-react';
+import { Clapperboard, Edit, Video, Key, LogIn, User as UserIcon, Image as ImageIcon, Film, FolderInput, HardDrive, LogOut, ChevronDown, CheckCircle, Save, FolderOpen, AlertCircle, Cloud, Laptop, Settings, FileJson } from 'lucide-react';
 import { AppMode, UserProfile, GoogleDriveFile, ProjectState, EditorTransferData } from './types';
 import { DirectorDeck } from './components/DirectorDeck';
 import { EditorDeck } from './components/EditorDeck';
@@ -46,6 +46,9 @@ const App: React.FC = () => {
   // Hidden file input for "Upload" logic
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Operation Lock to prevent auto-save interruptions
+  const isOperationInProgress = useRef(false);
+
   // Initialize
   useEffect(() => {
      if(process.env.API_KEY) {
@@ -83,6 +86,9 @@ const App: React.FC = () => {
       if (!autoSaveEnabled || !currentProjectState) return;
 
       const timer = setTimeout(() => {
+          // If operation is in progress (loading/saving manually), skip auto-save check
+          if (isOperationInProgress.current) return;
+
           // If no method selected yet, prompt user
           if (!saveMethod) {
               if (currentProjectState.storyIdea || currentProjectState.script) {
@@ -108,11 +114,7 @@ const App: React.FC = () => {
   }
 
   const handleSetLocalFolder = async () => {
-      // NOTE: Removed window.confirm here to ensure the subsequent showDirectoryPicker call 
-      // is considered part of the user's click interaction. Blocking alerts can expire the user activation token.
-      
       const result = await initProjectFolder();
-      
       if (result.success && result.name) {
           setProjectFolderName(result.name);
           setSaveMethod('local');
@@ -125,85 +127,99 @@ const App: React.FC = () => {
 
   // --- SAVE LOGIC ROUTER ---
   const handleSaveAction = async (data: ProjectState, method: 'cloud' | 'local' | 'download', isAutoSave = false) => {
-      // 1. Local Folder Save
-      if (method === 'local') {
-          if (!projectFolderName) {
-              if (isAutoSave) return; // Don't interrupt auto-save with prompts if not setup
-              const success = await handleSetLocalFolder();
-              if (!success) return;
-          }
-          
-          if (getProjectFolderName()) {
-              await saveProjectManifest(data);
-              if (!isAutoSave) alert(`Project saved locally as ${data.projectName || 'project'}.json`);
-          }
-          return;
-      }
-
-      // 2. Cloud Save
-      if (method === 'cloud') {
-          if (user) {
-            const name = data.projectName 
-            ? `${data.projectName}.json` 
-            : `NanoProject - ${new Date().toISOString()}.json`;
-            
-            try {
-                await saveProjectToDrive(data, name);
-                if (!isAutoSave) alert("Project Saved to Drive!");
-            } catch(e) {
-                console.warn("Cloud save failed", e);
-                if (!isAutoSave) alert("Save failed: " + (e as Error).message);
+      if (!isAutoSave) isOperationInProgress.current = true;
+      
+      try {
+        // 1. Local Folder Save
+        if (method === 'local') {
+            if (!projectFolderName) {
+                if (isAutoSave) return; 
+                const success = await handleSetLocalFolder();
+                if (!success) return;
             }
-          } else {
-              if (!isAutoSave) handleLogin(); // Trigger auth if explicit save
-          }
+            
+            if (getProjectFolderName()) {
+                await saveProjectManifest(data);
+                if (!isAutoSave) alert(`Project saved locally as ${data.projectName || 'project'}.json`);
+            }
+            return;
+        }
+
+        // 2. Cloud Save
+        if (method === 'cloud') {
+            if (user) {
+                const name = data.projectName 
+                ? `${data.projectName}.json` 
+                : `NanoProject - ${new Date().toISOString()}.json`;
+                
+                try {
+                    await saveProjectToDrive(data, name);
+                    if (!isAutoSave) alert("Project Saved to Drive!");
+                } catch(e) {
+                    console.warn("Cloud save failed", e);
+                    if (!isAutoSave) alert("Save failed: " + (e as Error).message);
+                }
+            } else {
+                if (!isAutoSave) handleLogin(); 
+            }
+        }
+      } finally {
+         if (!isAutoSave) isOperationInProgress.current = false;
       }
   };
 
   // --- LOAD LOGIC ROUTER ---
   const handleLoadAction = async (method: 'cloud' | 'local' | 'upload') => {
       setShowLoadMenu(false);
+      isOperationInProgress.current = true;
 
-      // 1. Upload File (Import)
-      if (method === 'upload') {
-          fileInputRef.current?.click();
-          return;
-      }
+      try {
+        if (method === 'upload') {
+            fileInputRef.current?.click();
+            return; 
+        }
 
-      // 2. Local Folder Load
-      if (method === 'local') {
-          const success = await handleSetLocalFolder();
-          if (success) {
-              const data = await loadProjectManifest();
-              if (data) {
-                  setLoadedProject(data);
-                  alert(`Loaded project from ${getProjectFolderName()}`);
-              } else {
-                  alert(`No project file found in ${getProjectFolderName()}. Starting fresh.`);
-              }
-          }
-          return;
-      }
+        if (method === 'local') {
+            const success = await handleSetLocalFolder();
+            if (success) {
+                const data = await loadProjectManifest();
+                if (data) {
+                    setLoadedProject(data);
+                    alert(`Loaded project from ${getProjectFolderName()}`);
+                } else {
+                    alert(`No project file found in ${getProjectFolderName()}. Starting fresh.`);
+                }
+            }
+            isOperationInProgress.current = false;
+            return;
+        }
 
-      // 3. Cloud Load
-      if (method === 'cloud') {
-          if (user) {
-              try {
-                  const files = await listProjects();
-                  setProjects(files);
-                  setShowLoadModal(true);
-              } catch(e) {
-                  alert("Failed to list projects");
-              }
-          } else {
-              handleLogin();
-          }
+        if (method === 'cloud') {
+            if (user) {
+                try {
+                    const files = await listProjects();
+                    setProjects(files);
+                    setShowLoadModal(true);
+                } catch(e) {
+                    alert("Failed to list projects");
+                }
+            } else {
+                handleLogin();
+            }
+            isOperationInProgress.current = false;
+        }
+      } catch (e) {
+          isOperationInProgress.current = false;
+          console.error("Load action failed", e);
       }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+        isOperationInProgress.current = false;
+        return;
+    }
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -215,6 +231,8 @@ const App: React.FC = () => {
         } catch (error) {
             console.error(error);
             alert('Invalid project file');
+        } finally {
+            isOperationInProgress.current = false;
         }
     };
     reader.readAsText(file);
@@ -222,16 +240,19 @@ const App: React.FC = () => {
   };
 
   const loadCloudFile = async (id: string) => {
+      isOperationInProgress.current = true;
       try {
           const data = await loadProjectFile(id);
           setLoadedProject(data);
           setMode(AppMode.DIRECTOR);
           setShowLoadModal(false);
-          setSaveMethod('cloud'); // Switch context to cloud
+          setSaveMethod('cloud'); 
           alert(`Loaded project: ${data.projectName || 'Untitled'}`);
       } catch (e) {
           console.error(e);
           alert("Load failed");
+      } finally {
+          isOperationInProgress.current = false;
       }
   };
 
@@ -252,7 +273,6 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans flex flex-col">
       <ApiKeyModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
 
-      {/* Hidden Global File Input for Imports */}
       <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileUpload} />
 
       {/* Header */}
@@ -378,12 +398,18 @@ const App: React.FC = () => {
                 </button>
                 
                 {showLoadMenu && (
-                    <div className="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
-                        <button 
-                            onClick={() => handleLoadAction('local')}
+                    <div className="absolute top-full right-0 mt-2 w-52 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                         <button 
+                            onClick={() => handleLoadAction('upload')}
                             className="w-full text-left px-4 py-3 hover:bg-slate-800 flex items-center gap-2 text-sm text-slate-300 hover:text-white"
                         >
-                            <Laptop className="w-4 h-4" /> Load from Device
+                            <FileJson className="w-4 h-4" /> Import JSON File
+                        </button>
+                        <button 
+                            onClick={() => handleLoadAction('local')}
+                            className="w-full text-left px-4 py-3 hover:bg-slate-800 flex items-center gap-2 text-sm text-slate-300 hover:text-white border-t border-slate-800"
+                        >
+                            <FolderInput className="w-4 h-4" /> Open Project Folder
                         </button>
                         <button 
                             onClick={() => handleLoadAction('cloud')}
@@ -410,7 +436,6 @@ const App: React.FC = () => {
                     </button>
                 )}
                 
-                {/* Unified Settings Button */}
                 <button 
                     onClick={() => setShowSettingsModal(true)} 
                     className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded text-xs text-slate-400 hover:text-white transition-colors"
@@ -430,7 +455,7 @@ const App: React.FC = () => {
                 <DirectorDeck 
                     onSaveProject={(d, m) => handleSaveAction(d, m)}
                     onLoadProject={(m) => handleLoadAction(m)}
-                    loadedProject={loadedProject}
+                    loadedProject={loadedProject || currentProjectState}
                     onSendToEditor={handleSendToEditor}
                     onProjectUpdate={handleProjectUpdate}
                     activeFolderName={projectFolderName}
@@ -439,11 +464,19 @@ const App: React.FC = () => {
             </div>
             
             <div style={{ display: mode === AppMode.EDITOR ? 'block' : 'none', height: '100%' }}>
-                <EditorDeck initialData={editorIncomingData} />
+                <EditorDeck 
+                    initialData={editorIncomingData} 
+                    projectState={currentProjectState}
+                    userGallery={userGeneratedImages}
+                />
             </div>
 
             <div style={{ display: mode === AppMode.FREE_EDITOR ? 'block' : 'none', height: '100%' }}>
-                <FreeEditorDeck onImageGenerated={handleNewUserImage} userGallery={userGeneratedImages} />
+                <FreeEditorDeck 
+                    onImageGenerated={handleNewUserImage} 
+                    userGallery={userGeneratedImages}
+                    projectState={currentProjectState}
+                />
             </div>
 
             <div style={{ display: mode === AppMode.VEO_FRAMES ? 'block' : 'none', height: '100%' }}>

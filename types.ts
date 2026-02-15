@@ -1,3 +1,4 @@
+
 export enum AppMode {
   DIRECTOR = 'DIRECTOR',
   EDITOR = 'EDITOR',
@@ -138,6 +139,8 @@ export interface StylePreferences {
   mode: VisualStyle;
   customPositive?: string;
   customNegative?: string;
+  customAppend?: string;
+  customOverride?: string;
 }
 
 export interface ProjectHistoryItem {
