@@ -8,6 +8,17 @@ export const initProjectFolder = async (): Promise<{ success: boolean; name?: st
         if (typeof window.showDirectoryPicker === 'undefined') {
              return { success: false, error: "Your browser does not support the File System Access API. Please use Chrome, Edge, or Opera on Desktop." };
         }
+        
+        // Check if we are in an iframe (cross-origin sub frames aren't allowed to show a file picker)
+        let inIframe = false;
+        try {
+            inIframe = window.self !== window.top;
+        } catch (e) {
+            inIframe = true;
+        }
+        if (inIframe) {
+             return { success: false, error: "Security Restriction: The File System API is blocked in this preview window. \n\nPlease open the app in a new tab (Full View) to use the Auto-Save Project Folder feature." };
+        }
 
         // @ts-ignore - Window type augmentation is tricky for experimental APIs
         const handle = await window.showDirectoryPicker({

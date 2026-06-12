@@ -109,23 +109,27 @@ export const setGeminiApiKey = (key: string) => {
 
 // Helper to get client with latest key
 const getClient = async () => {
-  // Check runtime key first
-  if (RUNTIME_API_KEY) {
-      return new GoogleGenAI({ apiKey: RUNTIME_API_KEY });
-  }
-
   // Fallback to AI Studio check
   // @ts-ignore
   if (window.aistudio && window.aistudio.hasSelectedApiKey) {
       // @ts-ignore
       const hasKey = await window.aistudio.hasSelectedApiKey();
-      if(hasKey) {
+      if(hasKey && process.env.API_KEY) {
            return new GoogleGenAI({ apiKey: process.env.API_KEY });
       }
   }
   
+  if (process.env.API_KEY) {
+      return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  }
+
+  // Check runtime key first
+  if (RUNTIME_API_KEY) {
+      return new GoogleGenAI({ apiKey: RUNTIME_API_KEY });
+  }
+  
   // Last resort
-  return new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  throw new Error("API key is missing. Please provide a valid API key.");
 };
 
 const resolveAspectRatio = (ratio: string): string => {
@@ -170,7 +174,7 @@ export const generateScriptAndPrompt = async (
 ): Promise<ScriptResponse> => {
   const ai = await getClient();
   // Reverted to Flash 3.0 for better JSON consistency and speed, as per user request ("Pro Flash" interpreted as Flash)
-  const model = "gemini-3-flash-preview";
+  const model = "gemini-3.1-pro-preview";
   
   const totalShots = gridSize * gridSize;
 
@@ -297,7 +301,7 @@ export const regenerateGridPromptOnly = async (
     gridSize: number
 ): Promise<string> => {
     const ai = await getClient();
-    const model = "gemini-3-flash-preview"; // Reverted to Flash 3.0
+    const model = "gemini-3.1-pro-preview"; // Reverted to Flash 3.0
     
     const totalShots = gridSize * gridSize;
 
@@ -354,9 +358,7 @@ export const generateBaseGridOptions = async (
   gridSize?: number
 ): Promise<string[]> => {
   const ai = await getClient();
-  // MANDATORY: Nano Banana Pro (gemini-3-pro-image-preview)
-  // NOTE: This model often requires a specific API key permission or Paid Tier.
-  const model = "gemini-3-pro-image-preview";
+  const model = "gemini-3.1-flash-image-preview";
   
   const styleModifier = resolveStyleString(stylePrefs);
   const negativePrompt = resolveNegativePrompt(stylePrefs);
@@ -415,7 +417,10 @@ The result should look like a single image split perfectly into ${gridSize} rows
       } catch (e: any) {
           console.error("Single grid gen failed", e);
           if (e.message?.includes('403') || e.message?.includes('permission denied')) {
-              throw new Error(`Permission Denied for model '${model}'. Ensure your API Key supports gemini-3-pro-image-preview.`);
+              throw new Error(`Permission Denied for model '${model}'. Ensure your API Key supports gemini-3.1-flash-image-preview.`);
+          }
+          if (e.message?.includes('API key is missing') || e.message?.includes('API key not valid')) {
+              throw new Error("API key is missing or invalid. Please open Settings (gear icon) and provide a valid API key.");
           }
           if (e.message?.includes('400')) {
                console.warn("Bad Request (400) on image gen. Prompt might be too long or ratio invalid.", e);
@@ -447,7 +452,7 @@ export const remasterQuadrant = async (
   stylePrefs: StylePreferences = { mode: 'DEFAULT' }
 ): Promise<string> => {
   const ai = await getClient();
-  const model = "gemini-3-pro-image-preview"; // Mandatory Pro Model
+  const model = "gemini-3.1-flash-image-preview";
   
   const styleModifier = resolveStyleString(stylePrefs);
   const negativePrompt = resolveNegativePrompt(stylePrefs);
@@ -507,7 +512,7 @@ export const generateImageFromReference = async (
   cameraShots: CameraShotType[] = []
 ): Promise<string> => {
     const ai = await getClient();
-    const model = "gemini-3-pro-image-preview"; // Mandatory Pro Model
+    const model = "gemini-3.1-flash-image-preview";
 
     const parts: any[] = [];
     const safeRefImages = refImages || [];
@@ -536,8 +541,8 @@ export const generateImageFromReference = async (
         contents: { parts },
         config: {
             imageConfig: {
-                imageSize: resolution,
-                aspectRatio: validRatio as any
+                aspectRatio: validRatio as any,
+                imageSize: resolution
             }
         }
     });
@@ -595,7 +600,15 @@ export const generateVideoVeo = async (
       config.lastFrame = { imageBytes: endImageInput, mimeType: 'image/png' };
   }
 
-  let operation = await ai.models.generateVideos(params);
+  let operation;
+  try {
+      operation = await ai.models.generateVideos(params);
+  } catch (e: any) {
+      if (e.message?.includes('403') || e.message?.includes('permission denied')) {
+          throw new Error(`Permission Denied for model '${model}'. Ensure your API Key supports Veo video generation.`);
+      }
+      throw e;
+  }
 
   while (!operation.done) {
       await new Promise(resolve => setTimeout(resolve, 5000));
@@ -606,7 +619,13 @@ export const generateVideoVeo = async (
   if (!videoUri) throw new Error("Video generation failed");
 
   // Use the runtime key to fetch the video
-  const vidResponse = await fetch(`${videoUri}&key=${RUNTIME_API_KEY}`);
+  const apiKey = process.env.API_KEY || RUNTIME_API_KEY || '';
+  const vidResponse = await fetch(videoUri, {
+    method: 'GET',
+    headers: {
+      'x-goog-api-key': apiKey,
+    },
+  });
   const vidBlob = await vidResponse.blob();
   return URL.createObjectURL(vidBlob);
 };
@@ -617,7 +636,7 @@ export const extractSpecificShotPrompt = async (
   shotDesc: string
 ): Promise<string> => {
   const ai = await getClient();
-  const model = "gemini-3-flash-preview"; // Reverted to Flash 3.0
+  const model = "gemini-3.1-pro-preview"; // Reverted to Flash 3.0
 
   const prompt = `
     You are an expert film director assistant. 

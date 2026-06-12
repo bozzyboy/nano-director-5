@@ -51,12 +51,23 @@ const App: React.FC = () => {
 
   // Initialize
   useEffect(() => {
-     if(process.env.API_KEY) {
-         setGeminiApiKey(process.env.API_KEY);
-     } else {
-         // Automatically open settings if no key is found on init
-         setShowSettingsModal(true);
-     }
+     const initKey = async () => {
+         // @ts-ignore
+         if (window.aistudio && window.aistudio.hasSelectedApiKey) {
+             // @ts-ignore
+             const hasKey = await window.aistudio.hasSelectedApiKey();
+             if (!hasKey) {
+                 setShowSettingsModal(true);
+             } else if (process.env.API_KEY) {
+                 setGeminiApiKey(process.env.API_KEY);
+             }
+         } else if (process.env.API_KEY) {
+             setGeminiApiKey(process.env.API_KEY);
+         } else {
+             setShowSettingsModal(true);
+         }
+     };
+     initKey();
      
      // Check for stored client ID
      const storedId = localStorage.getItem('nano_gcp_client_id');

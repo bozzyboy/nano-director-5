@@ -1,5 +1,6 @@
 {
-  "name": "Nano Director 5",
+  "name": "Remix: Nano Director 6",
   "description": "A professional AI film directing suite featuring Script-to-Screen workflows, Image Remastering, and Veo Video Generation.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
